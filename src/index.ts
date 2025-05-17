@@ -2,57 +2,105 @@ import { McpAgent } from "agents/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-// Define our MCP agent with tools
+// Define our MCP agent with IATI tools
 export class MyMCP extends McpAgent {
 	server = new McpServer({
-		name: "Authless Calculator",
+		name: "IATI MCP",
 		version: "1.0.0",
 	});
 
 	async init() {
-		// Simple addition tool
+		// get_iati_projects tool
 		this.server.tool(
-			"add",
-			{ a: z.number(), b: z.number() },
-			async ({ a, b }) => ({
-				content: [{ type: "text", text: String(a + b) }],
-			})
+			"get_iati_projects",
+			{
+				keyword: z.string(),
+				country_code: z.string().optional(),
+				sample_size: z.number().optional(),
+				facet_limit: z.number().optional(),
+			},
+			async ({ keyword, country_code, sample_size, facet_limit }: { keyword: string; country_code?: string; sample_size?: number; facet_limit?: number }) => {
+				const params = new URLSearchParams({
+					q: keyword,
+					...(country_code ? { country_code } : {}),
+					...(sample_size ? { sample_size: String(sample_size) } : {}),
+					...(facet_limit ? { facet_limit: String(facet_limit) } : {}),
+				});
+				const url = `https://api.iatistandard.org/datastore/projects?${params.toString()}`;
+				const resp = await fetch(url);
+				const data = await resp.json();
+				return { content: [{ type: "json", json: data }] };
+			}
 		);
 
-		// Calculator tool with multiple operations
+		// search_transactions tool
 		this.server.tool(
-			"calculate",
+			"search_transactions",
 			{
-				operation: z.enum(["add", "subtract", "multiply", "divide"]),
-				a: z.number(),
-				b: z.number(),
+				keyword: z.string().optional(),
+				country_code: z.string().optional(),
+				min_value: z.number().optional(),
+				max_value: z.number().optional(),
+				start_date: z.string().optional(),
+				end_date: z.string().optional(),
+				sample_size: z.number().optional(),
+				facet_limit: z.number().optional(),
 			},
-			async ({ operation, a, b }) => {
-				let result: number;
-				switch (operation) {
-					case "add":
-						result = a + b;
-						break;
-					case "subtract":
-						result = a - b;
-						break;
-					case "multiply":
-						result = a * b;
-						break;
-					case "divide":
-						if (b === 0)
-							return {
-								content: [
-									{
-										type: "text",
-										text: "Error: Cannot divide by zero",
-									},
-								],
-							};
-						result = a / b;
-						break;
-				}
-				return { content: [{ type: "text", text: String(result) }] };
+			async (args: { [key: string]: string | number | undefined }) => {
+				const params = new URLSearchParams(
+					Object.entries(args)
+						.filter(([_, v]) => v !== undefined && v !== null)
+						.map(([k, v]) => [k, String(v)])
+				);
+				const url = `https://api.iatistandard.org/datastore/transactions?${params.toString()}`;
+				const resp = await fetch(url);
+				const data = await resp.json();
+				return { content: [{ type: "json", json: data }] };
+			}
+		);
+
+		// get_codelist tool
+		this.server.tool(
+			"get_codelist",
+			{
+				codelist_name: z.string(),
+				format: z.string().optional(),
+				cl_version: z.string().optional(),
+				language: z.string().optional(),
+			},
+			async ({ codelist_name, format, cl_version, language }: { codelist_name: string; format?: string; cl_version?: string; language?: string }) => {
+				const params = new URLSearchParams({
+					...(format ? { format } : {}),
+					...(cl_version ? { cl_version } : {}),
+					...(language ? { language } : {}),
+				});
+				const url = `https://api.iatistandard.org/codelists/${codelist_name}?${params.toString()}`;
+				const resp = await fetch(url);
+				const data = await resp.json();
+				return { content: [{ type: "json", json: data }] };
+			}
+		);
+
+		// get_codelist_mapping tool
+		this.server.tool(
+			"get_codelist_mapping",
+			{
+				from_codelist: z.string(),
+				to_codelist: z.string(),
+				format: z.string().optional(),
+				cl_version: z.string().optional(),
+				language: z.string().optional(),
+			},
+			async ({ from_codelist, to_codelist, format, cl_version, language }: { from_codelist: string; to_codelist: string; format?: string; cl_version?: string; language?: string }) => {
+				const params = new URLSearchParams({
+					...(format ? { format } : {}),
+					...(cl_version ? { cl_version } : {}),
+					...(language ? { language } : {}),
+				});
+				const url = `https://api.iatistandard.org/codelists/mapping/${from_codelist}/${to_codelist}?${params.toString()}`;
+				const resp = await fetch(url);
+				const data = await resp.json();
+				return { content: [{ type: "json", json: data }] };
 			}
 		);
 	}
